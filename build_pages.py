@@ -55,33 +55,24 @@ PAGE = r"""<!DOCTYPE html>
   .cap { font-size: 0.95rem; color: var(--muted); white-space: nowrap; }
   .chart { height: 420px; }
   .chart .tradingview-widget-container, .chart .tradingview-widget-container__widget { height: 100%; width: 100%; }
-  .caps { margin: 8px 0 0; padding: 0 24px; overflow-x: auto; }
-  .caps table { border-collapse: collapse; background: var(--card); border: 1px solid var(--rule);
-                border-radius: 6px; overflow: hidden; font-size: 0.95rem; }
-  .caps th, .caps td { padding: 6px 14px; text-align: left; border-bottom: 1px solid var(--rule); }
-  .caps tr:last-child td { border-bottom: none; }
-  .caps th { color: var(--muted); font-weight: 400; }
-  .caps td.num, .caps th.num { text-align: right; font-variant-numeric: tabular-nums; }
-  .caps td.tk { color: var(--accent); font-weight: 600; }
-  .caps .note { color: var(--muted); font-size: 0.85rem; margin: 6px 0 0; }
+  nav.sectors { display: flex; flex-wrap: wrap; gap: 6px; padding: 16px 24px 0; }
+  nav.sectors a { padding: 6px 12px; border: 1px solid var(--rule); border-radius: 6px;
+                  background: var(--card); color: var(--ink); text-decoration: none; font-size: 0.9rem; }
+  nav.sectors a:hover { border-color: var(--accent); }
+  nav.sectors a[aria-current="page"] { background: var(--accent); color: var(--bg); border-color: var(--accent); }
   footer { padding: 0 24px 32px; color: var(--muted); font-size: 0.85rem; }
 </style>
 </head>
 <body>
+<nav class="sectors">
+__NAV__
+</nav>
 <header class="page">
   <h1>__TITLE__</h1>
-  <p>Weekly candles, trailing two years · <a href="index.html">All watchlists</a></p>
+  <p>Weekly candles, trailing two years</p>
 </header>
-<section class="caps">
-  <table>
-    <thead><tr><th>Ticker</th><th>Company</th><th class="num">Market cap</th></tr></thead>
-    <tbody id="capRows"></tbody>
-  </table>
-  <p class="note">Market caps from Google Finance as of __ASOF__, in each listing’s currency.
-    Sorted using USD/CAD __FX__.</p>
-</section>
 <main class="grid" id="grid"></main>
-<footer>Charts are live from TradingView.</footer>
+<footer>Charts are live from TradingView. Market caps from Google Finance as of __ASOF__, in each listing’s currency; sorted using USD/CAD __FX__.</footer>
 <script>
   const stocks = __DATA__;
   const fmtCap = s => {
@@ -90,8 +81,6 @@ PAGE = r"""<!DOCTYPE html>
     return v >= 1 ? cur + v.toFixed(1) + "B" : cur + Math.round(v * 1000) + "M";
   };
   const esc = x => String(x).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-  document.getElementById("capRows").innerHTML = stocks.map(s =>
-    `<tr><td class="tk">${esc(s.t)}</td><td>${esc(s.name)}</td><td class="num">${fmtCap(s)}</td></tr>`).join("");
   const grid = document.getElementById("grid");
   stocks.forEach(s => {
     const card = document.createElement("section");
@@ -187,19 +176,27 @@ def main():
             return r["cap"] / args.usdcad if r["cur"] == "CAD" else r["cap"]
 
         rows.sort(key=usd, reverse=True)
-        title = ws.title.replace("_", " ").title()
+        pages.append((f"{ws.title}.html", ws.title.replace("_", " ").title(), rows))
+
+    def nav(current):
+        items = ['<a href="index.html"' + (' aria-current="page"' if current == "index.html" else "") + '>Home</a>']
+        for f, t, _ in pages:
+            cur = ' aria-current="page"' if f == current else ""
+            items.append(f'<a href="{f}"{cur}>{html.escape(t)}</a>')
+        return "\n".join(items)
+
+    for fname, title, rows in pages:
         page = (PAGE.replace("__TITLE__", html.escape(title))
+                    .replace("__NAV__", nav(fname))
                     .replace("__ASOF__", asof)
                     .replace("__FX__", f"{args.usdcad:.2f}")
                     .replace("__DATA__", json.dumps(rows, ensure_ascii=False, indent=1)))
-        fname = f"{ws.title}.html"
         (out / fname).write_text(page, encoding="utf-8")
         missing = sum(r["cap"] is None for r in rows)
-        pages.append((fname, title, len(rows)))
         print(f"{fname:20} {len(rows):3} stocks  ({missing} without market cap)")
 
-    links = "\n".join(f'  <li><a href="{f}">{html.escape(t)} <span>· {n}</span></a></li>'
-                      for f, t, n in pages)
+    links = "\n".join(f'  <li><a href="{f}">{html.escape(t)} <span>· {len(r)}</span></a></li>'
+                      for f, t, r in pages)
     (out / "index.html").write_text(INDEX.replace("__LINKS__", links), encoding="utf-8")
     print(f"\nWrote {len(pages)} pages + index.html to {out.resolve()}")
 
